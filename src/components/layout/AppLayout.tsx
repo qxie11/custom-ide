@@ -11,10 +11,12 @@ import { EditorTabs } from '@/components/code-editor/EditorTabs';
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
 import { StatusBar } from '@/components/status-bar/StatusBar';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { useToast } from '@/hooks/use-toast'; // For notifications
+import { useToast } from '@/hooks/use-toast';
 
-// Helper to generate unique IDs
 const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 9);
+
+// Helper to deep clone file structure
+const deepCloneFiles = (files: FileItem[]): FileItem[] => JSON.parse(JSON.stringify(files));
 
 export default function AppLayout() {
   const [activePanel, setActivePanel] = useState('explorer'); 
@@ -25,11 +27,11 @@ export default function AppLayout() {
   const [mockFiles, setMockFiles] = useState<FileItem[]>(initialMockFiles); 
   const { toast } = useToast();
 
-  const findFileById = useCallback((files: FileItem[], id: string): FileItem | null => {
-    for (const file of files) {
+  const findFileByIdRecursive = useCallback((filesToSearch: FileItem[], id: string): FileItem | null => {
+    for (const file of filesToSearch) {
       if (file.id === id) return file;
       if (file.children) {
-        const found = findFileById(file.children, id);
+        const found = findFileByIdRecursive(file.children, id);
         if (found) return found;
       }
     }
@@ -49,40 +51,70 @@ export default function AppLayout() {
   };
 
   const handleRenameItem = useCallback((itemId: string, newName: string) => {
-    const renameRecursively = (items: FileItem[]): FileItem[] => {
+    if (!newName.trim() || newName.includes('/') || newName.includes('\\')) {
+      toast({ title: "Invalid Name", description: "File/folder name cannot be empty or contain slashes.", variant: "destructive" });
+      return;
+    }
+
+    const renameRecursively = (items: FileItem[], currentPathParentId: string | null = null): FileItem[] => {
+      // Check for duplicate names within the same directory
+      const parentItems = currentPathParentId === null 
+        ? items 
+        : findFileByIdRecursive(mockFiles, currentPathParentId)?.children;
+
+      if (parentItems?.some(item => item.id !== itemId && item.name === newName)) {
+          const parentFolder = currentPathParentId ? findFileByIdRecursive(mockFiles, currentPathParentId) : null;
+          const location = parentFolder ? `in folder "${parentFolder.name}"` : "at the root";
+          toast({ title: "Duplicate Name", description: `An item named "${newName}" already exists ${location}.`, variant: "destructive" });
+          return items; // Return original items to prevent rename
+      }
+      
       return items.map(item => {
         if (item.id === itemId) {
-          // Basic validation: prevent empty names or names with slashes
-          if (!newName.trim() || newName.includes('/') || newName.includes('\\')) {
-            toast({ title: "Invalid Name", description: "File/folder name cannot be empty or contain slashes.", variant: "destructive" });
-            return item; // Return original item if name is invalid
-          }
-          // Check for duplicate names within the same directory
-          // This is a simplified check; a more robust one would traverse up to find siblings
-          // For now, we assume names are unique globally for simplicity in this mock
           return { ...item, name: newName };
         }
         if (item.children) {
-          return { ...item, children: renameRecursively(item.children) };
+          return { ...item, children: renameRecursively(item.children, item.id) };
         }
         return item;
       });
     };
+    
+    let originalName = "";
+    const findOriginalName = (items: FileItem[]): string | undefined => {
+        for (const item of items) {
+            if (item.id === itemId) return item.name;
+            if (item.children) {
+                const name = findOriginalName(item.children);
+                if (name) return name;
+            }
+        }
+        return undefined;
+    }
+    originalName = findOriginalName(mockFiles) || "";
 
-    setMockFiles(prevMockFiles => renameRecursively(prevMockFiles));
-    setOpenFiles(prevOpenFiles =>
-      prevOpenFiles.map(file =>
-        file.id === itemId ? { ...file, name: newName } : file
-      )
-    );
-    toast({ title: "Renamed", description: `Item renamed to "${newName}".` });
-  }, [toast]);
+
+    setMockFiles(prevMockFiles => {
+        const updatedFiles = renameRecursively(prevMockFiles);
+        if (JSON.stringify(updatedFiles) !== JSON.stringify(prevMockFiles)) { // Check if actual change occurred
+             setOpenFiles(prevOpenFiles =>
+                prevOpenFiles.map(file =>
+                    file.id === itemId ? { ...file, name: newName } : file
+                )
+            );
+            if (originalName !== newName) { // Only toast if name actually changed
+              toast({ title: "Renamed", description: `"${originalName}" renamed to "${newName}".` });
+            }
+        }
+        return updatedFiles;
+    });
+  }, [toast, mockFiles, findFileByIdRecursive]);
 
   const handleDeleteItem = useCallback((itemId: string) => {
     const deleteRecursively = (items: FileItem[], idToDelete: string): FileItem[] => {
       return items.filter(item => {
         if (item.id === idToDelete) {
-          return false; // Remove item
+          return false; 
         }
         if (item.children) {
           item.children = deleteRecursively(item.children, idToDelete);
@@ -91,46 +123,45 @@ export default function AppLayout() {
       });
     };
 
-    const itemToDelete = findFileById(mockFiles, itemId);
+    const itemToDelete = findFileByIdRecursive(mockFiles, itemId);
     setMockFiles(prevMockFiles => deleteRecursively(prevMockFiles, itemId));
 
-    // Close tab if deleted file was open
-    if (itemToDelete && itemToDelete.type === 'file') {
-      setOpenFiles(prevOpenFiles => prevOpenFiles.filter(f => f.id !== itemId));
-      if (activeFileId === itemId) {
-        const newOpenFiles = openFiles.filter(f => f.id !== itemId);
-        if (newOpenFiles.length > 0) {
-          const newActiveFile = newOpenFiles[newOpenFiles.length - 1];
-          setActiveFileId(newActiveFile.id);
-          setEditorContent(newActiveFile.content || '');
-          setCurrentLanguage(newActiveFile.language || 'javascript');
-        } else {
-          setActiveFileId(null);
-          setEditorContent('');
-          setCurrentLanguage('javascript');
-        }
+    if (itemToDelete) {
+      if (itemToDelete.type === 'file') {
+        setOpenFiles(prevOpenFiles => {
+          const newOpenFiles = prevOpenFiles.filter(f => f.id !== itemId);
+          if (activeFileId === itemId) {
+            if (newOpenFiles.length > 0) {
+              const newActiveFile = newOpenFiles[newOpenFiles.length - 1];
+              setActiveFileId(newActiveFile.id);
+              setEditorContent(newActiveFile.content || '');
+              setCurrentLanguage(newActiveFile.language || 'javascript');
+            } else {
+              setActiveFileId(null);
+              setEditorContent('');
+              setCurrentLanguage('javascript');
+            }
+          }
+          return newOpenFiles;
+        });
       }
+      toast({ title: "Deleted", description: `Item "${itemToDelete.name}" deleted.` });
     }
-    toast({ title: "Deleted", description: `Item "${itemToDelete?.name || 'Item'}" deleted.` });
-  }, [activeFileId, openFiles, mockFiles, findFileById, toast]);
+  }, [activeFileId, openFiles, mockFiles, findFileByIdRecursive, toast]);
 
   const handleAddItem = useCallback((name: string, type: 'file' | 'folder', parentId: string | null) => {
-    // Basic validation
     if (!name.trim() || name.includes('/') || name.includes('\\')) {
       toast({ title: "Invalid Name", description: "Name cannot be empty or contain slashes.", variant: "destructive" });
       return;
     }
 
     const newItem: FileItem = {
-      id: generateId(),
-      name,
-      type,
+      id: generateId(), name, type,
       content: type === 'file' ? '' : undefined,
-      language: type === 'file' ? 'plaintext' as any : undefined, // Default language, can be improved
+      language: type === 'file' ? 'plaintext' as any : undefined,
       children: type === 'folder' ? [] : undefined,
     };
 
-    // Determine language for file based on extension
     if (type === 'file') {
         const ext = name.split('.').pop()?.toLowerCase();
         switch (ext) {
@@ -144,53 +175,138 @@ export default function AppLayout() {
         }
     }
 
-
-    const addRecursively = (items: FileItem[]): FileItem[] => {
-      if (parentId === null) { // Add to root
-        // Check for duplicate name in root
-        if (items.some(item => item.name === name && (parentId === null))) {
+    const addRecursively = (items: FileItem[], currentFilesRef: FileItem[]): FileItem[] => {
+      if (parentId === null) {
+        if (items.some(item => item.name === name)) {
             toast({ title: "Duplicate Name", description: `An item named "${name}" already exists at the root.`, variant: "destructive" });
-            return items; 
+            return currentFilesRef; 
         }
-        return [...items, newItem];
+        return [...items, newItem].sort((a,b) => a.name.localeCompare(b.name));
       }
       return items.map(item => {
         if (item.id === parentId && item.type === 'folder') {
-          // Check for duplicate name in this folder
           if (item.children?.some(child => child.name === name)) {
             toast({ title: "Duplicate Name", description: `An item named "${name}" already exists in "${item.name}".`, variant: "destructive" });
             return item;
           }
-          return { ...item, children: [...(item.children || []), newItem] };
+          return { ...item, children: [...(item.children || []), newItem].sort((a,b) => a.name.localeCompare(b.name)) };
         }
         if (item.children) {
-          return { ...item, children: addRecursively(item.children) };
+          return { ...item, children: addRecursively(item.children, currentFilesRef) };
         }
         return item;
       });
     };
 
     setMockFiles(prevMockFiles => {
-        const updatedFiles = addRecursively(prevMockFiles);
-        // Check if the structure actually changed to prevent unnecessary toast for duplicates
+        const updatedFiles = addRecursively(prevMockFiles, prevMockFiles);
         if (JSON.stringify(updatedFiles) !== JSON.stringify(prevMockFiles)) {
              toast({ title: "Created", description: `${type === 'file' ? 'File' : 'Folder'} "${name}" created.` });
         }
         return updatedFiles;
     });
-
-    if (type === 'file') {
-      // Optionally open the new file
-      // handleFileSelect(newItem); 
-    }
   }, [toast]);
+
+  const handleMoveItem = useCallback((itemId: string, targetFolderId: string | null) => {
+    const clonedFiles = deepCloneFiles(mockFiles);
+    let itemToMove: FileItem | null = null;
+
+    const removeItem = (items: FileItem[], id: string): { removed: FileItem | null, newItems: FileItem[] } => { /* ... (implementation from thought process) ... */ 
+      let found: FileItem | null = null;
+      const filteredItems = items.filter(item => {
+        if (item.id === id) {
+          found = item;
+          return false;
+        }
+        if (item.children) {
+          const childResult = removeItem(item.children, id);
+          if (childResult.removed) {
+            found = childResult.removed;
+            item.children = childResult.newItems;
+          }
+        }
+        return true;
+      });
+      return { removed: found, newItems: filteredItems };
+    };
+
+    const isMovingIntoSelfOrDescendant = ( movingItemId: string, currentTargetFolderId: string | null): boolean => {
+      if (currentTargetFolderId === null) return false;
+      if (movingItemId === currentTargetFolderId) return true;
+
+      const movingItem = findFileByIdRecursive(clonedFiles, movingItemId);
+      if (!movingItem || movingItem.type !== 'folder') return false;
+
+      const checkDescendants = (folder: FileItem): boolean => {
+          if (!folder.children) return false;
+          for (const child of folder.children) {
+              if (child.id === currentTargetFolderId) return true;
+              if (child.type === 'folder' && checkDescendants(child)) return true;
+          }
+          return false;
+      };
+      return checkDescendants(movingItem);
+    };
+
+    if (isMovingIntoSelfOrDescendant(itemId, targetFolderId)) {
+      toast({ title: "Invalid Move", description: "Cannot move a folder into itself or one of its subfolders.", variant: "destructive" });
+      return;
+    }
+    
+    const { removed, newItems: filesAfterRemoval } = removeItem(clonedFiles, itemId);
+    itemToMove = removed;
+
+    if (!itemToMove) {
+      toast({ title: "Error", description: "Item to move not found.", variant: "destructive" });
+      return; // Item not found
+    }
+
+    const addItem = (items: FileItem[], parentId: string | null, itemToAdd: FileItem): { updatedItems: FileItem[], success: boolean } => {
+      if (parentId === null) { // Add to root
+        if (items.some(item => item.name === itemToAdd.name && item.id !== itemToAdd.id)) {
+           toast({ title: "Duplicate Name", description: `An item named "${itemToAdd.name}" already exists at the root. Move cancelled.`, variant: "destructive" });
+           return { updatedItems: mockFiles, success: false }; 
+        }
+        return { updatedItems: [...items, itemToAdd].sort((a,b) => a.name.localeCompare(b.name)), success: true };
+      }
+      let success = true;
+      const mappedItems = items.map(item => {
+        if (item.id === parentId && item.type === 'folder') {
+          if (item.children?.some(child => child.name === itemToAdd.name && child.id !== itemToAdd.id)) {
+            toast({ title: "Duplicate Name", description: `An item named "${itemToAdd.name}" already exists in "${item.name}". Move cancelled.`, variant: "destructive" });
+            success = false;
+            return item; 
+          }
+          return { ...item, children: [...(item.children || []), itemToAdd].sort((a,b) => a.name.localeCompare(b.name)) };
+        }
+        if (item.children) {
+          const childResult = addItem(item.children, parentId, itemToAdd);
+           if (!childResult.success) success = false;
+          return { ...item, children: childResult.updatedItems };
+        }
+        return item;
+      });
+      return { updatedItems: mappedItems, success };
+    };
+
+    const { updatedItems: finalFiles, success: moveSuccess } = addItem(filesAfterRemoval, targetFolderId, itemToMove);
+
+    if (moveSuccess) {
+      setMockFiles(finalFiles);
+      toast({ title: "Moved", description: `Item "${itemToMove.name}" moved successfully.` });
+    } else {
+      // If move failed due to duplicate name, mockFiles wasn't set with finalFiles
+      // but itemToMove was already 'removed' from the clone.
+      // The original mockFiles is still intact due to cloning.
+      // No need to revert setMockFiles as it wasn't called with bad data.
+    }
+
+  }, [mockFiles, toast, findFileByIdRecursive]);
 
 
   const handleFileSelect = useCallback((fileToOpen: FileItem) => {
     if (fileToOpen.type !== 'file') return;
-
-    const freshFileToOpen = findFileById(mockFiles, fileToOpen.id) || fileToOpen;
-
+    const freshFileToOpen = findFileByIdRecursive(mockFiles, fileToOpen.id) || fileToOpen;
     const existingFile = openFiles.find(f => f.id === freshFileToOpen.id);
     if (!existingFile) {
       setOpenFiles(prev => [...prev, freshFileToOpen]);
@@ -198,16 +314,16 @@ export default function AppLayout() {
     setActiveFileId(freshFileToOpen.id);
     setEditorContent(freshFileToOpen.content || '');
     setCurrentLanguage(freshFileToOpen.language || 'javascript');
-  }, [openFiles, mockFiles, findFileById]);
+  }, [openFiles, mockFiles, findFileByIdRecursive]);
 
   const handleTabClick = useCallback((fileId: string) => {
-    const fileToActivate = openFiles.find(f => f.id === fileId) || findFileById(mockFiles, fileId);
+    const fileToActivate = openFiles.find(f => f.id === fileId) || findFileByIdRecursive(mockFiles, fileId);
     if (fileToActivate && fileToActivate.type === 'file') {
       setActiveFileId(fileId);
       setEditorContent(fileToActivate.content || '');
       setCurrentLanguage(fileToActivate.language || 'javascript');
     }
-  }, [openFiles, mockFiles, findFileById]);
+  }, [openFiles, mockFiles, findFileByIdRecursive]);
 
   const handleCloseTab = useCallback((fileIdToClose: string) => {
     setOpenFiles(prevOpenFiles => {
@@ -215,7 +331,7 @@ export default function AppLayout() {
       if (activeFileId === fileIdToClose) {
         if (updatedOpenFiles.length > 0) {
           const newActiveFile = updatedOpenFiles[updatedOpenFiles.length - 1]; 
-          const freshNewActiveFile = findFileById(mockFiles, newActiveFile.id) || newActiveFile;
+          const freshNewActiveFile = findFileByIdRecursive(mockFiles, newActiveFile.id) || newActiveFile;
           setActiveFileId(freshNewActiveFile.id);
           setEditorContent(freshNewActiveFile.content || '');
           setCurrentLanguage(freshNewActiveFile.language || 'javascript');
@@ -227,20 +343,19 @@ export default function AppLayout() {
       }
       return updatedOpenFiles;
     });
-  }, [activeFileId, mockFiles, findFileById, openFiles]); // Added openFiles to dependency array
+  }, [activeFileId, mockFiles, findFileByIdRecursive]); 
   
   const handleEditorContentChange = useCallback((newContent: string) => {
     setEditorContent(newContent);
-    setOpenFiles(prevOpenFiles => 
-      prevOpenFiles.map(file => 
-        file.id === activeFileId ? { ...file, content: newContent } : file
-      )
-    );
     if(activeFileId) {
+      setOpenFiles(prevOpenFiles => 
+        prevOpenFiles.map(file => 
+          file.id === activeFileId ? { ...file, content: newContent } : file
+        )
+      );
       setMockFiles(prevMockFiles => updateFileContentInMock(prevMockFiles, activeFileId, newContent));
     }
   }, [activeFileId]);
-
 
   useEffect(() => {
      const findFirstFile = (items: FileItem[]): FileItem | null => {
@@ -253,15 +368,17 @@ export default function AppLayout() {
       }
       return null;
     };
-    const firstFile = findFirstFile(mockFiles);
-    if (firstFile && openFiles.length === 0 && !activeFileId) {
-      handleFileSelect(firstFile);
+    if (mockFiles.length > 0 && openFiles.length === 0 && !activeFileId) {
+        const firstFile = findFirstFile(mockFiles);
+        if (firstFile) {
+            handleFileSelect(firstFile);
+        }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount to load initial file
+  }, []);
 
 
-  const currentActiveFile = openFiles.find(f => f.id === activeFileId) || (activeFileId ? findFileById(mockFiles, activeFileId) : null) ;
+  const currentActiveFile = openFiles.find(f => f.id === activeFileId) || (activeFileId ? findFileByIdRecursive(mockFiles, activeFileId) : null) ;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -276,6 +393,7 @@ export default function AppLayout() {
                 onRenameItem={handleRenameItem}
                 onDeleteItem={handleDeleteItem}
                 onAddItem={handleAddItem}
+                onMoveItem={handleMoveItem}
               />}
             {activePanel === 'settings' && <SettingsPanel />}
             {activePanel !== 'explorer' && activePanel !== 'settings' && (
@@ -303,5 +421,3 @@ export default function AppLayout() {
     </div>
   );
 }
-
-    
