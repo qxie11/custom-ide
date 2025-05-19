@@ -12,18 +12,21 @@ import {
   Code2,       // For HTML/XML
   Palette,     // For CSS
   FileJson2,   // For JSON
-  File,        // For Markdown (replaced FileMarkdown2)
+  File,        // For Markdown
   Package,     // For package.json
   Wind,        // For Tailwind config
   Settings2,   // For general config files
   FileLock2,   // For .env
-  Image        // For image files like favicon
+  Image,       // For image files like favicon
+  Pencil       // For rename action
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface FileExplorerProps {
   files: FileItem[];
   onFileSelect: (file: FileItem) => void;
   selectedFileId: string | null;
+  onRenameItem: (itemId: string, newName: string) => void;
 }
 
 interface FileExplorerItemProps {
@@ -31,6 +34,7 @@ interface FileExplorerItemProps {
   onFileSelect: (file: FileItem) => void;
   selectedFileId: string | null;
   level: number;
+  onRenameItem: (itemId: string, newName: string) => void;
 }
 
 const getFileIcon = (item: FileItem, isFolderOpen?: boolean) => {
@@ -56,16 +60,16 @@ const getFileIcon = (item: FileItem, isFolderOpen?: boolean) => {
       return <Code2 className={iconClassName} />;
     case 'css':
       return <Palette className={iconClassName} />;
-    case 'json': // Handles other JSON files if package.json isn't matched by name
+    case 'json': 
       return <FileJson2 className={iconClassName} />;
     case 'markdown':
-      return <File className={iconClassName} />; // Changed from FileMarkdown2
+      return <File className={iconClassName} />; 
     default:
       return <FileText className={iconClassName} />;
   }
 };
 
-function FileExplorerItem({ item, onFileSelect, selectedFileId, level }: FileExplorerItemProps) {
+function FileExplorerItem({ item, onFileSelect, selectedFileId, level, onRenameItem }: FileExplorerItemProps) {
   const [isOpen, setIsOpen] = useState(true); // Default open for demo
 
   const handleToggle = () => {
@@ -74,11 +78,20 @@ function FileExplorerItem({ item, onFileSelect, selectedFileId, level }: FileExp
     }
   };
 
-  const handleSelect = () => {
+  const handleSelect = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (item.type === 'file') {
       onFileSelect(item);
     } else {
-      handleToggle(); // Also toggle folder on click
+      handleToggle(); 
+    }
+  };
+  
+  const handleRename = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selection or toggle
+    const newName = window.prompt(`Enter new name for "${item.name}":`, item.name);
+    if (newName && newName.trim() !== '' && newName.trim() !== item.name) {
+      onRenameItem(item.id, newName.trim());
     }
   };
 
@@ -87,22 +100,40 @@ function FileExplorerItem({ item, onFileSelect, selectedFileId, level }: FileExp
   return (
     <div className="text-sm">
       <div
-        className={`flex items-center p-1.5 rounded-sm cursor-pointer hover:bg-accent/10 ${isSelected ? 'bg-accent/20 text-accent-foreground' : 'text-foreground/80'}`}
-        style={{ paddingLeft: `${level * 1 + 0.5}rem` }}
-        onClick={handleSelect}
+        className={`flex items-center justify-between p-1.5 rounded-sm group hover:bg-accent/10 ${isSelected ? 'bg-accent/20 text-accent' : 'text-foreground/80'}`}
+        style={{ paddingLeft: `${level * 1 + 0.35}rem` }} // Adjusted padding for icon button space
       >
-        {item.type === 'folder' ? (
-          isOpen ? <ChevronDown className="h-4 w-4 mr-1 shrink-0" /> : <ChevronRight className="h-4 w-4 mr-1 shrink-0" />
-        ) : (
-          <span className="w-4 mr-1 shrink-0"></span> // Placeholder for alignment
-        )}
-        {getFileIcon(item, item.type === 'folder' ? isOpen : undefined)}
-        <span className="truncate">{item.name}</span>
+        <div className="flex items-center truncate cursor-pointer" onClick={handleSelect}>
+          {item.type === 'folder' ? (
+            isOpen ? <ChevronDown className="h-4 w-4 mr-1 shrink-0" /> : <ChevronRight className="h-4 w-4 mr-1 shrink-0" />
+          ) : (
+            <span className="w-4 mr-1 shrink-0"></span> 
+          )}
+          {getFileIcon(item, item.type === 'folder' ? isOpen : undefined)}
+          <span className="truncate ml-0.5">{item.name}</span>
+        </div>
+        <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 p-0.5 rounded-sm opacity-0 group-hover:opacity-60 hover:!opacity-100 focus:opacity-100 shrink-0"
+            onClick={handleRename}
+            aria-label={`Rename ${item.name}`}
+            title={`Rename ${item.name}`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+        </Button>
       </div>
       {item.type === 'folder' && isOpen && item.children && (
         <div>
           {item.children.map((child) => (
-            <FileExplorerItem key={child.id} item={child} onFileSelect={onFileSelect} selectedFileId={selectedFileId} level={level + 1} />
+            <FileExplorerItem 
+              key={child.id} 
+              item={child} 
+              onFileSelect={onFileSelect} 
+              selectedFileId={selectedFileId} 
+              level={level + 1}
+              onRenameItem={onRenameItem}
+            />
           ))}
         </div>
       )}
@@ -110,13 +141,22 @@ function FileExplorerItem({ item, onFileSelect, selectedFileId, level }: FileExp
   );
 }
 
-export function FileExplorer({ files, onFileSelect, selectedFileId }: FileExplorerProps) {
+export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem }: FileExplorerProps) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-2 text-xs font-semibold text-foreground/60 uppercase tracking-wider">Explorer</div>
       {files.map((item) => (
-        <FileExplorerItem key={item.id} item={item} onFileSelect={onFileSelect} selectedFileId={selectedFileId} level={0} />
+        <FileExplorerItem 
+          key={item.id} 
+          item={item} 
+          onFileSelect={onFileSelect} 
+          selectedFileId={selectedFileId} 
+          level={0} 
+          onRenameItem={onRenameItem}
+        />
       ))}
     </div>
   );
 }
+
+    

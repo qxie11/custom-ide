@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -43,18 +44,46 @@ export default function AppLayout() {
     });
   };
 
+  const handleRenameItem = useCallback((itemId: string, newName: string) => {
+    const renameRecursively = (items: FileItem[]): FileItem[] => {
+      return items.map(item => {
+        if (item.id === itemId) {
+          return { ...item, name: newName };
+        }
+        if (item.children) {
+          return { ...item, children: renameRecursively(item.children) };
+        }
+        return item;
+      });
+    };
+
+    setMockFiles(prevMockFiles => renameRecursively(prevMockFiles));
+
+    setOpenFiles(prevOpenFiles =>
+      prevOpenFiles.map(file =>
+        file.id === itemId ? { ...file, name: newName } : file
+      )
+    );
+    // Note: If the activeFileId points to the renamed file, its name will be updated
+    // because currentActiveFile is derived from openFiles which now has the new name.
+  }, []);
+
 
   const handleFileSelect = useCallback((fileToOpen: FileItem) => {
     if (fileToOpen.type !== 'file') return;
 
-    const existingFile = openFiles.find(f => f.id === fileToOpen.id);
+    // Ensure the file reflects the latest state from mockFiles (e.g., after a rename)
+    const freshFileToOpen = findFileById(mockFiles, fileToOpen.id) || fileToOpen;
+
+
+    const existingFile = openFiles.find(f => f.id === freshFileToOpen.id);
     if (!existingFile) {
-      setOpenFiles(prev => [...prev, fileToOpen]);
+      setOpenFiles(prev => [...prev, freshFileToOpen]);
     }
-    setActiveFileId(fileToOpen.id);
-    setEditorContent(fileToOpen.content || '');
-    setCurrentLanguage(fileToOpen.language || 'javascript');
-  }, [openFiles]);
+    setActiveFileId(freshFileToOpen.id);
+    setEditorContent(freshFileToOpen.content || '');
+    setCurrentLanguage(freshFileToOpen.language || 'javascript');
+  }, [openFiles, mockFiles, findFileById]);
 
   const handleTabClick = useCallback((fileId: string) => {
     const fileToActivate = openFiles.find(f => f.id === fileId) || findFileById(mockFiles, fileId);
@@ -70,10 +99,11 @@ export default function AppLayout() {
       const updatedOpenFiles = prevOpenFiles.filter(f => f.id !== fileIdToClose);
       if (activeFileId === fileIdToClose) {
         if (updatedOpenFiles.length > 0) {
-          const newActiveFile = updatedOpenFiles[updatedOpenFiles.length - 1];
-          setActiveFileId(newActiveFile.id);
-          setEditorContent(newActiveFile.content || '');
-          setCurrentLanguage(newActiveFile.language || 'javascript');
+          const newActiveFile = updatedOpenFiles[updatedOpenFiles.length - 1]; // Or find in mockFiles
+          const freshNewActiveFile = findFileById(mockFiles, newActiveFile.id) || newActiveFile;
+          setActiveFileId(freshNewActiveFile.id);
+          setEditorContent(freshNewActiveFile.content || '');
+          setCurrentLanguage(freshNewActiveFile.language || 'javascript');
         } else {
           setActiveFileId(null);
           setEditorContent('');
@@ -82,7 +112,7 @@ export default function AppLayout() {
       }
       return updatedOpenFiles;
     });
-  }, [activeFileId]);
+  }, [activeFileId, mockFiles, findFileById]);
   
   const handleEditorContentChange = useCallback((newContent: string) => {
     setEditorContent(newContent);
@@ -101,21 +131,34 @@ export default function AppLayout() {
 
   // Effect to load the first file by default or a specific file
   useEffect(() => {
-    const firstFile = mockFiles.flatMap(f => f.type === 'file' ? [f] : (f.children?.filter(c => c.type === 'file') || [])).find(Boolean);
-    if (firstFile && openFiles.length === 0) {
+    // Find the first actual file to open
+     const findFirstFile = (items: FileItem[]): FileItem | null => {
+      for (const item of items) {
+        if (item.type === 'file') return item;
+        if (item.children) {
+          const found = findFirstFile(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const firstFile = findFirstFile(mockFiles);
+    if (firstFile && openFiles.length === 0 && !activeFileId) { // Ensure not to override if a file is already active
       handleFileSelect(firstFile);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mockFiles]); // Only on initial mockFiles load
+  }, [mockFiles]); // Only on initial mockFiles load (or when mockFiles structure changes significantly)
 
-  const currentActiveFile = openFiles.find(f => f.id === activeFileId);
+
+  const currentActiveFile = openFiles.find(f => f.id === activeFileId) || (activeFileId ? findFileById(mockFiles, activeFileId) : null) ;
+
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <ActivityBar activePanel={activePanel} setActivePanel={setActivePanel} />
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         <ResizablePanel defaultSize={18} minSize={10} maxSize={30} className="bg-sidebar-background border-r border-border min-w-[200px]">
-            {activePanel === 'explorer' && <FileExplorer files={mockFiles} onFileSelect={handleFileSelect} selectedFileId={activeFileId} />}
+            {activePanel === 'explorer' && <FileExplorer files={mockFiles} onFileSelect={handleFileSelect} selectedFileId={activeFileId} onRenameItem={handleRenameItem} />}
             {activePanel === 'settings' && <SettingsPanel />}
             {/* Placeholder for other panels like search, git, etc. */}
             {activePanel !== 'explorer' && activePanel !== 'settings' && (
@@ -143,3 +186,5 @@ export default function AppLayout() {
     </div>
   );
 }
+
+    
