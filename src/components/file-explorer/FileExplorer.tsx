@@ -17,7 +17,7 @@ import {
   Wind,        // For Tailwind config
   Settings2,   // For general config files
   FileLock2,   // For .env
-  Image,       // For image files like favicon
+  Image as ImageIcon, // Renamed to avoid conflict with next/image if used in same context
   Pencil       // For rename action
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,34 +38,37 @@ interface FileExplorerItemProps {
 }
 
 const getFileIcon = (item: FileItem, isFolderOpen?: boolean) => {
-  const iconClassName = "h-4 w-4 mr-2 shrink-0";
+  const iconProps = { className: "h-4 w-4 mr-2 shrink-0" };
   
   if (item.type === 'folder') {
-    return <Folder className={`${iconClassName} ${isFolderOpen ? 'text-accent' : ''}`} />;
+    return isFolderOpen 
+      ? <Folder {...iconProps} className={`${iconProps.className} text-accent`} /> 
+      : <Folder {...iconProps} className={`${iconProps.className} text-muted-foreground`} />;
   }
 
   // Specific file names
-  if (item.name === 'package.json') return <Package className={iconClassName} />;
-  if (item.name === 'tailwind.config.js' || item.name === 'tailwind.config.ts') return <Wind className={iconClassName} />;
-  if (item.name === 'next.config.js' || item.name === 'next.config.ts') return <Settings2 className={iconClassName} />;
-  if (item.name === '.env') return <FileLock2 className={iconClassName} />;
-  if (item.name === 'favicon.ico') return <Image className={iconClassName} />;
+  if (item.name === 'package.json') return <Package {...iconProps} className={`${iconProps.className} text-purple-400`} />;
+  if (item.name === 'tailwind.config.js' || item.name === 'tailwind.config.ts') return <Wind {...iconProps} className={`${iconProps.className} text-teal-400`} />;
+  if (item.name === 'next.config.js' || item.name === 'next.config.ts') return <Settings2 {...iconProps} className={`${iconProps.className} text-sky-400`} />;
+  if (item.name === '.env') return <FileLock2 {...iconProps} className={`${iconProps.className} text-yellow-500`} />;
+  if (item.name === 'favicon.ico') return <ImageIcon {...iconProps} className={`${iconProps.className} text-pink-400`} />;
   
   // By language
   switch (item.language) {
     case 'javascript':
+      return <Braces {...iconProps} className={`${iconProps.className} text-yellow-400`} />;
     case 'typescript':
-      return <Braces className={iconClassName} />;
+      return <Braces {...iconProps} className={`${iconProps.className} text-blue-500`} />;
     case 'html':
-      return <Code2 className={iconClassName} />;
+      return <Code2 {...iconProps} className={`${iconProps.className} text-orange-500`} />;
     case 'css':
-      return <Palette className={iconClassName} />;
+      return <Palette {...iconProps} className={`${iconProps.className} text-sky-500`} />;
     case 'json': 
-      return <FileJson2 className={iconClassName} />;
+      return <FileJson2 {...iconProps} className={`${iconProps.className} text-lime-500`} />;
     case 'markdown':
-      return <File className={iconClassName} />; 
+      return <File {...iconProps} className={`${iconProps.className} text-slate-400`} />; 
     default:
-      return <FileText className={iconClassName} />;
+      return <FileText {...iconProps} className={`${iconProps.className} text-slate-300`} />;
   }
 };
 
@@ -100,22 +103,22 @@ function FileExplorerItem({ item, onFileSelect, selectedFileId, level, onRenameI
   return (
     <div className="text-sm">
       <div
-        className={`flex items-center justify-between p-1.5 rounded-sm group hover:bg-accent/10 ${isSelected ? 'bg-accent/20 text-accent' : 'text-foreground/80'}`}
-        style={{ paddingLeft: `${level * 1 + 0.35}rem` }} // Adjusted padding for icon button space
+        className={`flex items-center justify-between p-1.5 rounded-sm group hover:bg-accent/10 ${isSelected ? 'bg-accent/20 text-accent font-medium' : 'text-foreground/80'}`}
+        style={{ paddingLeft: `${level * 1 + 0.35}rem` }} 
       >
-        <div className="flex items-center truncate cursor-pointer" onClick={handleSelect}>
+        <div className="flex items-center truncate cursor-pointer flex-grow min-w-0" onClick={handleSelect}>
           {item.type === 'folder' ? (
             isOpen ? <ChevronDown className="h-4 w-4 mr-1 shrink-0" /> : <ChevronRight className="h-4 w-4 mr-1 shrink-0" />
           ) : (
             <span className="w-4 mr-1 shrink-0"></span> 
           )}
           {getFileIcon(item, item.type === 'folder' ? isOpen : undefined)}
-          <span className="truncate ml-0.5">{item.name}</span>
+          <span className="truncate ml-0.5" title={item.name}>{item.name}</span>
         </div>
         <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 p-0.5 rounded-sm opacity-0 group-hover:opacity-60 hover:!opacity-100 focus:opacity-100 shrink-0"
+            className="h-6 w-6 p-0.5 rounded-sm opacity-0 group-hover:opacity-60 hover:!opacity-100 focus:opacity-100 shrink-0 ml-1"
             onClick={handleRename}
             aria-label={`Rename ${item.name}`}
             title={`Rename ${item.name}`}
@@ -158,5 +161,3 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
     </div>
   );
 }
-
-    
