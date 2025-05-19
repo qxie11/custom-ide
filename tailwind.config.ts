@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import defaultTheme from 'tailwindcss/defaultTheme';
 
 export default {
     darkMode: ["class"],
@@ -9,6 +10,10 @@ export default {
   ],
   theme: {
   	extend: {
+      fontFamily: {
+        sans: ['var(--font-geist-sans)', ...defaultTheme.fontFamily.sans],
+        mono: ['var(--font-geist-mono)', ...defaultTheme.fontFamily.mono],
+      },
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
@@ -50,16 +55,15 @@ export default {
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
   			},
-  			sidebar: {
-  				DEFAULT: 'hsl(var(--sidebar-background))',
-  				foreground: 'hsl(var(--sidebar-foreground))',
-  				primary: 'hsl(var(--sidebar-primary))',
-  				'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-  				accent: 'hsl(var(--sidebar-accent))',
-  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-  				border: 'hsl(var(--sidebar-border))',
-  				ring: 'hsl(var(--sidebar-ring))'
-  			}
+        'activity-bar-background': 'hsl(var(--activity-bar-background))',
+        'sidebar-background': 'hsl(var(--sidebar-background))',
+        'editor-background': 'hsl(var(--editor-background))',
+        'status-bar-background': 'hsl(var(--status-bar-background))',
+        'status-bar-foreground': 'hsl(var(--status-bar-foreground))',
+        'tab-active-background': 'hsl(var(--tab-active-background))',
+        'tab-inactive-background': 'hsl(var(--tab-inactive-background))',
+        'tab-hover-background': 'hsl(var(--tab-hover-background))',
+        'tab-border': 'hsl(var(--tab-border))',
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
