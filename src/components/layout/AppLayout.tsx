@@ -6,6 +6,7 @@ import type { FileItem } from '@/lib/mock-data';
 import { mockFiles as initialMockFiles } from '@/lib/mock-data';
 import { ActivityBar } from '@/components/activity-bar/ActivityBar';
 import { FileExplorer } from '@/components/file-explorer/FileExplorer';
+import { SearchPanel } from '@/components/search-panel/SearchPanel';
 import { SettingsPanel } from '@/components/settings-panel/SettingsPanel';
 import { EditorTabs } from '@/components/code-editor/EditorTabs';
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
@@ -395,8 +396,13 @@ export default function AppLayout() {
                 onAddItem={handleAddItem}
                 onMoveItem={handleMoveItem}
               />}
+            {activePanel === 'search' && 
+              <SearchPanel 
+                allFiles={mockFiles}
+                onFileSelect={handleFileSelect}
+              />}
             {activePanel === 'settings' && <SettingsPanel />}
-            {activePanel !== 'explorer' && activePanel !== 'settings' && (
+            {activePanel !== 'explorer' && activePanel !== 'settings' && activePanel !== 'search' && (
               <div className="p-4 text-muted-foreground text-sm">Panel: {activePanel}</div>
             )}
         </ResizablePanel>
@@ -421,3 +427,5 @@ export default function AppLayout() {
     </div>
   );
 }
+
+    
