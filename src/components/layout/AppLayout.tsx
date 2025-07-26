@@ -13,6 +13,7 @@ import { CodeEditor } from '@/components/code-editor/CodeEditor';
 import { StatusBar } from '@/components/status-bar/StatusBar';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useToast } from '@/hooks/use-toast';
+import type { EditorSettings } from '@/components/settings-panel/SettingsPanel';
 
 const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 9);
 
@@ -27,6 +28,13 @@ export default function AppLayout() {
   const [currentLanguage, setCurrentLanguage] = useState<FileItem['language']>('javascript');
   const [mockFiles, setMockFiles] = useState<FileItem[]>(initialMockFiles); 
   const { toast } = useToast();
+
+  const [editorSettings, setEditorSettings] = useState<EditorSettings>({
+    fontSize: 14,
+    autoSave: true,
+    wordWrap: 'off',
+    formatOnSave: true,
+  });
 
   const findFileByIdRecursive = useCallback((filesToSearch: FileItem[], id: string): FileItem | null => {
     for (const file of filesToSearch) {
@@ -148,7 +156,7 @@ export default function AppLayout() {
       }
       toast({ title: "Deleted", description: `Item "${itemToDelete.name}" deleted.` });
     }
-  }, [activeFileId, openFiles, mockFiles, findFileByIdRecursive, toast]);
+  }, [activeFileId, mockFiles, findFileByIdRecursive, toast]);
 
   const handleAddItem = useCallback((name: string, type: 'file' | 'folder', parentId: string | null) => {
     if (!name.trim() || name.includes('/') || name.includes('\\')) {
@@ -358,6 +366,11 @@ export default function AppLayout() {
     }
   }, [activeFileId]);
 
+  const handleApplySettings = useCallback((newSettings: EditorSettings) => {
+    setEditorSettings(newSettings);
+    toast({ title: "Settings Applied", description: "Your editor settings have been updated." });
+  }, [toast]);
+
   useEffect(() => {
      const findFirstFile = (items: FileItem[]): FileItem | null => {
       for (const item of items) {
@@ -401,7 +414,11 @@ export default function AppLayout() {
                 allFiles={mockFiles}
                 onFileSelect={handleFileSelect}
               />}
-            {activePanel === 'settings' && <SettingsPanel />}
+            {activePanel === 'settings' && 
+              <SettingsPanel 
+                settings={editorSettings} 
+                onApply={handleApplySettings} 
+              />}
             {activePanel !== 'explorer' && activePanel !== 'settings' && activePanel !== 'search' && (
               <div className="p-4 text-muted-foreground text-sm">Panel: {activePanel}</div>
             )}
@@ -420,6 +437,10 @@ export default function AppLayout() {
             content={editorContent}
             language={currentLanguage}
             onContentChange={handleEditorContentChange}
+            options={{
+              fontSize: editorSettings.fontSize,
+              wordWrap: editorSettings.wordWrap,
+            }}
           />
           <StatusBar />
         </ResizablePanel>
