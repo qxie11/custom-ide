@@ -34,7 +34,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added missing import
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -47,6 +47,8 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+
 
 interface FileExplorerProps {
   files: FileItem[];
@@ -87,6 +89,7 @@ const getFileIcon = (item: FileItem, isFolderOpen?: boolean) => {
 
 interface FileExplorerItemComponentProps {
   item: FileItem;
+  allItems: FileItem[];
   onFileSelect: (file: FileItem) => void;
   selectedFileId: string | null;
   level: number;
@@ -105,7 +108,7 @@ interface FileExplorerItemComponentProps {
 }
 
 function FileExplorerItemComponent({
-  item, onFileSelect, selectedFileId, level,
+  item, allItems, onFileSelect, selectedFileId, level,
   renamingItemId, editText, onStartRename, onConfirmRename, onCancelRename, setEditTextLocal,
   onDeleteItem, onMoveItem,
   draggedItemIdState, setDraggedItemIdState,
@@ -151,35 +154,21 @@ function FileExplorerItemComponent({
     e.dataTransfer.effectAllowed = 'move';
     setDraggedItemIdState(item.id);
   };
-
+  
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (item.type === 'folder' && draggedItemIdState && item.id !== draggedItemIdState) {
-      // Prevent dropping item into its own direct children if it's a folder being dragged
-      const draggedItem = findItemByIdGlobal(draggedItemIdState); // You'll need to pass files or make findItemByIdGlobal accessible
-      if (draggedItem && draggedItem.type === 'folder' && item.id.startsWith(draggedItem.id + '-')) {
-         // This logic assumes IDs are structured like 'parentId-childId'. Adjust if your ID structure is different.
-         // Or, more simply, prevent if item is a descendant of draggedItem.
-         // This needs a more robust check if folder structures are deep.
-         // For now, we check if the target is a direct child or if the dragged item IS the parent of the target.
-         const draggedItemIsParentOfTarget = item.parentId === draggedItemIdState; // Assuming FileItem has parentId
-         if (draggedItemIsParentOfTarget) {
-            e.dataTransfer.dropEffect = 'none';
-            return;
-         }
-      }
-
-      setDragOverFolderIdState(item.id);
-      e.dataTransfer.dropEffect = 'move';
+        setDragOverFolderIdState(item.id);
+        e.dataTransfer.dropEffect = 'move';
     } else {
-      e.dataTransfer.dropEffect = 'none';
+        e.dataTransfer.dropEffect = 'none';
+        setDragOverFolderIdState(null); // Clear if not over a valid folder
     }
   };
 
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return; 
     setDragOverFolderIdState(null);
   };
 
@@ -194,41 +183,27 @@ function FileExplorerItemComponent({
     setDraggedItemIdState(null);
   };
 
-  // Helper to find an item by ID (if you don't want to pass all files down)
-  // This is a simplified version. For robustness, AppLayout.tsx's findFileByIdRecursive is better.
-  const findItemByIdGlobal = (id: string): FileItem | null => {
-    // This function would need access to the `files` array from FileExplorer props.
-    // For simplicity here, assuming it's available or passed down.
-    // If not, this check in handleDragOver needs adjustment or removal.
-    return null; // Placeholder
-  };
-
-
   const isSelected = item.type === 'file' && item.id === selectedFileId && renamingItemId !== item.id;
   const isBeingRenamed = renamingItemId === item.id;
   const isDragOver = item.type === 'folder' && dragOverFolderIdState === item.id && draggedItemIdState !== item.id;
-
-  // Add parentId to FileItem if it's not there for more robust drag-and-drop checks
-  // This is an example; actual implementation might need to pass files array or use context
-  // FileItem should ideally have a parentId property for easier tree traversal logic.
-
+  
   return (
     <div
       className="text-sm"
       draggable={!isBeingRenamed}
       onDragStart={isBeingRenamed ? undefined : handleDragStart}
-      onDragOver={isBeingRenamed ? undefined : handleDragOver}
-      onDragLeave={isBeingRenamed ? undefined : handleDragLeave}
-      onDrop={isBeingRenamed ? undefined : handleDrop}
     >
       <div
-        className={`flex items-center justify-between p-1.5 rounded-sm group 
-                    ${isSelected ? 'bg-accent/20 text-accent font-medium' : 'text-foreground/80'}
-                    ${isDragOver ? 'bg-accent/30 ring-1 ring-accent' : ''}
-                    ${isBeingRenamed ? 'bg-input' : 'hover:bg-accent/10'}
-                    `}
+        className={cn(`flex items-center justify-between p-1.5 rounded-sm group`,
+            isSelected ? 'bg-accent/20 text-accent font-medium' : 'text-foreground/80',
+            isDragOver ? 'bg-accent/30 ring-1 ring-accent' : '',
+            isBeingRenamed ? 'bg-input' : 'hover:bg-accent/10',
+        )}
         style={{ paddingLeft: `${level * 1 + 0.35}rem` }}
         onClick={isBeingRenamed ? (e) => e.stopPropagation() : handleSelect}
+        onDragOver={isBeingRenamed ? undefined : handleDragOver}
+        onDragLeave={isBeingRenamed ? undefined : handleDragLeave}
+        onDrop={isBeingRenamed ? undefined : handleDrop}
       >
         <div className="flex items-center truncate flex-grow min-w-0">
           {item.type === 'folder' ? (
@@ -299,6 +274,7 @@ function FileExplorerItemComponent({
           {item.children.map((child) => (
             <FileExplorerItemComponent
               key={child.id} item={{...child, parentId: item.id} as FileItem & {parentId?: string}} // Pass parentId
+              allItems={allItems}
               onFileSelect={onFileSelect} selectedFileId={selectedFileId} level={level + 1}
               renamingItemId={renamingItemId} editText={editText} onStartRename={onStartRename}
               onConfirmRename={onConfirmRename} onCancelRename={onCancelRename} setEditTextLocal={setEditTextLocal}
@@ -320,6 +296,7 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
   
   const [draggedItemIdState, setDraggedItemIdState] = useState<string | null>(null);
   const [dragOverFolderIdState, setDragOverFolderIdState] = useState<string | null>(null);
+  const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
 
   const findItemById = useCallback((items: FileItem[], id: string): FileItem | null => {
     for (const file of items) {
@@ -328,6 +305,17 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
         const found = findItemById(file.children, id);
         if (found) return found;
       }
+    }
+    return null;
+  }, []);
+
+  const findParentIdOfItem = useCallback((items: FileItem[], id: string, parentId: string | null = null): string | null => {
+    for (const item of items) {
+        if (item.id === id) return parentId;
+        if (item.children) {
+            const foundParentId = findParentIdOfItem(item.children, id, item.id);
+            if (foundParentId !== null) return foundParentId;
+        }
     }
     return null;
   }, []);
@@ -354,70 +342,16 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
   }, []);
 
   const getParentIdForNewItem = (): string | null => {
-    if (selectedFileId && !renamingItemId) { 
-      const findParentRecursive = (currentFiles: FileItem[], targetId: string, currentParentId: string | null = null): string | null => {
-        for (const item of currentFiles) {
-          if (item.id === targetId) {
-            return item.type === 'folder' ? item.id : currentParentId;
-          }
-          if (item.children) {
-            // If target is a file, its parentId is the current item's id.
-            // If target is a folder, its parentId is the current item's parentId.
-            // This needs parentId in FileItem or more complex logic.
-            const foundInChild = findItemById(item.children, targetId);
-            if(foundInChild) {
-              return item.id; // The current item IS the parent folder
-            }
-            // Recursive call was trying to find parent, not the item itself.
-            // The logic should be: if item.id === targetId, then its parent is currentParentId.
-            // If target is a folder, it can BE the parent.
-          }
-        }
-        // Fallback: if no specific file/folder is selected, or selection is at root
-        const selectedItem = findItemById(currentFiles, targetId);
-        if (selectedItem) {
-            if (selectedItem.type === 'folder') return selectedItem.id; // Add inside selected folder
-            // If selected item is a file, find its parent
-            // This requires parentId on FileItem or a search from root
-            const searchForParent = (itemsToSearch: FileItem[], childId: string, parentCandId: string | null = null): string | null => {
-                for(const i of itemsToSearch) {
-                    if(i.children?.some(c => c.id === childId)) return i.id;
-                    if(i.children){
-                        const found = searchForParent(i.children, childId, i.id);
-                        if(found) return found;
-                    }
-                }
-                return parentCandId; // This is not quite right, needs the actual parent
-            }
-            return searchForParent(files, targetId);
-        }
+    if (!selectedFileId || renamingItemId) return null;
+    
+    const selectedItem = findItemById(files, selectedFileId);
+    if (!selectedItem) return null;
 
-        return null;
-      };
-
-      let parentIdForNew: string | null = null;
-      const selectedItem = findItemById(files, selectedFileId);
-      if (selectedItem) {
-        if (selectedItem.type === 'folder') {
-          parentIdForNew = selectedItem.id;
-        } else {
-          // Find parent of the selected file
-          const findParent = (items: FileItem[], sId: string, pId: string | null = null): string | null => {
-            for (const item of items) {
-              if (item.children?.some(child => child.id === sId)) return item.id;
-              if (item.children) {
-                const found = findParent(item.children, sId, item.id);
-                if (found) return found;
-              }
-            }
-            return pId; // This fallback is tricky and might not always be correct
-          };
-          parentIdForNew = findParent(files, selectedFileId);
-        }
-      }
-      return parentIdForNew;
+    if (selectedItem.type === 'folder') {
+        return selectedItem.id;
     }
-    return null; 
+    
+    return findParentIdOfItem(files, selectedFileId);
   };
 
   const handleAddNewItem = (type: 'file' | 'folder') => {
@@ -428,16 +362,48 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
     }
   };
   
+  const handleDragOverRoot = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if(draggedItemIdState && dragOverFolderIdState === null) {
+      setIsDraggingOverRoot(true);
+    }
+  };
+
+  const handleDragLeaveRoot = (e: React.DragEvent<HTMLDivElement>) => {
+      setIsDraggingOverRoot(false);
+  };
+  
+  const handleDropOnRoot = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverRoot(false);
+    if(dragOverFolderIdState) { // If dropping on a folder, let that handler take it
+      return;
+    }
+    const droppedItemId = e.dataTransfer.getData('text/plain');
+    const parentId = findParentIdOfItem(files, droppedItemId);
+
+    if (droppedItemId && parentId !== null) { // only move if it's not already at root
+        onMoveItem(droppedItemId, null);
+    }
+    setDraggedItemIdState(null);
+  };
+
   useEffect(() => {
     if (renamingItemId && selectedFileId !== renamingItemId) {
-       // Consider if renaming should be confirmed/cancelled if selection changes.
-       // For now, user must explicitly confirm/cancel.
+       // Renaming is cancelled if selection changes
+       handleCancelRename();
     }
-  }, [selectedFileId, renamingItemId]);
+  }, [selectedFileId, renamingItemId, handleCancelRename]);
 
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div 
+      className={cn("h-full overflow-y-auto p-1", isDraggingOverRoot && "bg-accent/10")}
+      onDragOver={handleDragOverRoot}
+      onDragLeave={handleDragLeaveRoot}
+      onDrop={handleDropOnRoot}
+    >
       <div className="p-2 text-xs font-semibold text-foreground/60 uppercase tracking-wider flex justify-between items-center">
         <span>Explorer</span>
         <div className="flex space-x-1">
@@ -487,6 +453,7 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
         <FileExplorerItemComponent
           key={item.id}
           item={item}
+          allItems={files}
           onFileSelect={onFileSelect}
           selectedFileId={selectedFileId}
           level={0}
@@ -494,7 +461,7 @@ export function FileExplorer({ files, onFileSelect, selectedFileId, onRenameItem
           editText={editText}
           onStartRename={handleStartRename}
           onConfirmRename={handleConfirmRename}
-          onCancelRename={handleCancelRename}
+  onCancelRename={handleCancelRename}
           setEditTextLocal={setEditText}
           onDeleteItem={onDeleteItem}
           onMoveItem={onMoveItem}
