@@ -212,7 +212,7 @@ export default function AppLayout() {
     const clonedFiles = deepCloneFiles(mockFiles);
     let itemToMove: FileItem | null = null;
 
-    const removeItem = (items: FileItem[], id: string): { removed: FileItem | null, newItems: FileItem[] } => { /* ... (implementation from thought process) ... */ 
+    const removeItem = (items: FileItem[], id: string): { removed: FileItem | null, newItems: FileItem[] } => { 
       let found: FileItem | null = null;
       const filteredItems = items.filter(item => {
         if (item.id === id) {
@@ -427,5 +427,3 @@ export default function AppLayout() {
     </div>
   );
 }
-
-    
