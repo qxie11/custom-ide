@@ -17,55 +17,57 @@ export function useFileTree() {
         return;
       }
 
-      const renameRecursively = (items: FileItem[], currentPathParentId: string | null = null): FileItem[] => {
-        const parentItems = currentPathParentId === null ? items : findItemByIdRecursive(files, currentPathParentId)?.children;
-
-        if (parentItems?.some(item => item.id !== itemId && item.name === newName)) {
-          const parentFolder = currentPathParentId ? findItemByIdRecursive(files, currentPathParentId) : null;
-          const location = parentFolder ? `in folder "${parentFolder.name}"` : 'at the root';
-          toast({title: 'Duplicate Name', description: `An item named "${newName}" already exists ${location}.`, variant: 'destructive'});
-          return items;
-        }
-
+      let originalName = '';
+      const findAndRename = (items: FileItem[]): FileItem[] => {
         return items.map(item => {
           if (item.id === itemId) {
+            originalName = item.name;
             return {...item, name: newName};
           }
           if (item.children) {
-            return {...item, children: renameRecursively(item.children, item.id)};
+            return {...item, children: findAndRename(item.children)};
           }
           return item;
         });
       };
 
-      let originalName = '';
-      const findOriginalName = (items: FileItem[]): string | undefined => {
-        for (const item of items) {
-          if (item.id === itemId) return item.name;
-          if (item.children) {
-            const name = findOriginalName(item.children);
-            if (name) return name;
-          }
-        }
-        return undefined;
-      };
-      originalName = findOriginalName(files) || '';
+      const updatedFiles = findAndRename(deepCloneFiles(files));
 
-      setFiles(prevFiles => {
-        const updatedFiles = renameRecursively(prevFiles);
-        if (JSON.stringify(updatedFiles) !== JSON.stringify(prevFiles)) {
-          if (originalName !== newName) {
-            toast({title: 'Renamed', description: `"${originalName}" renamed to "${newName}".`});
-          }
-        }
-        return updatedFiles;
-      });
+      // Check for duplicates at the same level
+      const parentId = findParentIdOfItem(updatedFiles, itemId);
+      const parent = parentId ? findItemByIdRecursive(updatedFiles, parentId) : null;
+      const siblings = parent ? parent.children : updatedFiles.filter(f => !findParentIdOfItem(updatedFiles, f.id));
+
+      if (siblings?.some(item => item.id !== itemId && item.name === newName)) {
+        const location = parent ? `in folder "${parent.name}"` : 'at the root';
+        toast({title: 'Duplicate Name', description: `An item named "${newName}" already exists ${location}.`, variant: 'destructive'});
+        return;
+      }
+
+      setFiles(updatedFiles);
+      if (originalName && originalName !== newName) {
+        toast({title: 'Renamed', description: `"${originalName}" renamed to "${newName}".`});
+      }
     },
-    [toast, files]
+    [files, toast]
   );
+
+  const findParentIdOfItem = (items: FileItem[], id: string, parentId: string | null = null): string | null => {
+    for (const item of items) {
+      if (item.id === id) return parentId;
+      if (item.children) {
+        const foundParentId = findParentIdOfItem(item.children, id, item.id);
+        if (foundParentId !== null) return foundParentId;
+      }
+    }
+    return null;
+  };
 
   const handleDeleteItem = useCallback(
     (itemId: string) => {
+      const itemToDelete = findItemByIdRecursive(files, itemId);
+      if (!itemToDelete) return;
+
       const deleteRecursively = (items: FileItem[], idToDelete: string): FileItem[] => {
         return items.filter(item => {
           if (item.id === idToDelete) {
@@ -78,12 +80,8 @@ export function useFileTree() {
         });
       };
 
-      const itemToDelete = findItemByIdRecursive(files, itemId);
       setFiles(prevFiles => deleteRecursively([...prevFiles], itemId));
-
-      if (itemToDelete) {
-        toast({title: 'Deleted', description: `Item "${itemToDelete.name}" deleted.`});
-      }
+      toast({title: 'Deleted', description: `Item "${itemToDelete.name}" deleted.`});
     },
     [files, toast]
   );
@@ -131,35 +129,28 @@ export function useFileTree() {
         }
       }
 
-      const addRecursively = (items: FileItem[], currentFilesRef: FileItem[]): FileItem[] => {
-        if (parentId === null) {
-          if (items.some(item => item.name === name)) {
-            toast({title: 'Duplicate Name', description: `An item named "${name}" already exists at the root.`, variant: 'destructive'});
-            return currentFilesRef;
-          }
-          return [...items, newItem].sort((a, b) => a.name.localeCompare(b.name));
-        }
-        return items.map(item => {
-          if (item.id === parentId && item.type === 'folder') {
-            if (item.children?.some(child => child.name === name)) {
-              toast({title: 'Duplicate Name', description: `An item named "${name}" already exists in "${item.name}".`, variant: 'destructive'});
-              return item;
-            }
-            return {...item, children: [...(item.children || []), newItem].sort((a, b) => a.name.localeCompare(b.name))};
-          }
-          if (item.children) {
-            return {...item, children: addRecursively(item.children, currentFilesRef)};
-          }
-          return item;
-        });
-      };
-
       setFiles(prevFiles => {
-        const updatedFiles = addRecursively(prevFiles, prevFiles);
-        if (JSON.stringify(updatedFiles) !== JSON.stringify(prevFiles)) {
-          toast({title: 'Created', description: `${type === 'file' ? 'File' : 'Folder'} "${name}" created.`});
+        const newFiles = deepCloneFiles(prevFiles);
+        if (parentId === null) {
+          if (newFiles.some(item => item.name === name)) {
+            toast({title: 'Duplicate Name', description: `An item named "${name}" already exists at the root.`, variant: 'destructive'});
+            return prevFiles;
+          }
+          newFiles.push(newItem);
+          newFiles.sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+          const parentFolder = findItemByIdRecursive(newFiles, parentId);
+          if (parentFolder && parentFolder.type === 'folder') {
+            if (parentFolder.children?.some(child => child.name === name)) {
+              toast({title: 'Duplicate Name', description: `An item named "${name}" already exists in "${parentFolder.name}".`, variant: 'destructive'});
+              return prevFiles;
+            }
+            parentFolder.children = [...(parentFolder.children || []), newItem];
+            parentFolder.children.sort((a, b) => a.name.localeCompare(b.name));
+          }
         }
-        return updatedFiles;
+        toast({title: 'Created', description: `${type === 'file' ? 'File' : 'Folder'} "${name}" created.`});
+        return newFiles;
       });
     },
     [toast]
@@ -169,99 +160,72 @@ export function useFileTree() {
     (itemId: string, targetFolderId: string | null) => {
       const clonedFiles = deepCloneFiles(files);
       let itemToMove: FileItem | null = null;
+      let sourceFolder: FileItem[] | null = null;
 
-      const removeItem = (items: FileItem[], id: string): {removed: FileItem | null; newItems: FileItem[]} => {
-        let found: FileItem | null = null;
-        const filteredItems = items.filter(item => {
+      const removeItem = (items: FileItem[], id: string): FileItem[] => {
+        const newItems = [];
+        for (const item of items) {
           if (item.id === id) {
-            found = item;
-            return false;
-          }
-          if (item.children) {
-            const childResult = removeItem(item.children, id);
-            if (childResult.removed) {
-              found = childResult.removed;
-              item.children = childResult.newItems;
+            itemToMove = item;
+            sourceFolder = items;
+          } else {
+            if (item.children) {
+              item.children = removeItem(item.children, id);
             }
+            newItems.push(item);
           }
-          return true;
-        });
-        return {removed: found, newItems: filteredItems};
+        }
+        return newItems;
       };
 
-      const isMovingIntoSelfOrDescendant = (movingItemId: string, currentTargetFolderId: string | null): boolean => {
-        if (currentTargetFolderId === null) return false;
-        if (movingItemId === currentTargetFolderId) return true;
+      const filesAfterRemoval = removeItem(clonedFiles, itemId);
 
-        const movingItem = findItemByIdRecursive(clonedFiles, movingItemId);
-        if (!movingItem || movingItem.type !== 'folder') return false;
+      if (!itemToMove) return;
 
-        const checkDescendants = (folder: FileItem): boolean => {
-          if (!folder.children) return false;
-          for (const child of folder.children) {
-            if (child.id === currentTargetFolderId) return true;
-            if (child.type === 'folder' && checkDescendants(child)) return true;
-          }
-          return false;
-        };
-        return checkDescendants(movingItem);
+      if (itemId === targetFolderId) return; // Can't move into itself
+
+      const isMovingIntoDescendant = (movingItemId: string, currentTargetId: string | null): boolean => {
+        if (!currentTargetId) return false;
+        let parent = findParentIdOfItem(files, currentTargetId);
+        while (parent) {
+          if (parent === movingItemId) return true;
+          parent = findParentIdOfItem(files, parent);
+        }
+        return false;
       };
-
-      if (isMovingIntoSelfOrDescendant(itemId, targetFolderId)) {
-        toast({title: 'Invalid Move', description: 'Cannot move a folder into itself or one of its subfolders.', variant: 'destructive'});
-        return;
+      
+      if (isMovingIntoDescendant(itemId, targetFolderId)){
+        toast({title: 'Invalid Move', description: 'Cannot move a folder into one of its subfolders.', variant: 'destructive'});
+        return
       }
 
-      const {removed, newItems: filesAfterRemoval} = removeItem(clonedFiles, itemId);
-      itemToMove = removed;
-
-      if (!itemToMove) {
-        toast({title: 'Error', description: 'Item to move not found.', variant: 'destructive'});
-        return;
-      }
-
-      const addItem = (items: FileItem[], parentId: string | null, itemToAdd: FileItem): {updatedItems: FileItem[]; success: boolean} => {
-        if (parentId === null) {
-          if (items.some(item => item.name === itemToAdd.name && item.id !== itemToAdd.id)) {
+      if (targetFolderId === null) {
+        if (filesAfterRemoval.some(item => item.name === itemToMove!.name)) {
+          toast({title: 'Duplicate Name', description: `An item named "${itemToMove!.name}" already exists at the root.`, variant: 'destructive'});
+          return;
+        }
+        filesAfterRemoval.push(itemToMove);
+        filesAfterRemoval.sort((a, b) => a.name.localeCompare(b.name));
+      } else {
+        const targetFolder = findItemByIdRecursive(filesAfterRemoval, targetFolderId);
+        if (targetFolder && targetFolder.type === 'folder') {
+          if (targetFolder.children?.some(child => child.name === itemToMove!.name)) {
             toast({
               title: 'Duplicate Name',
-              description: `An item named "${itemToAdd.name}" already exists at the root. Move cancelled.`,
+              description: `An item named "${itemToMove!.name}" already exists in "${targetFolder.name}".`,
               variant: 'destructive',
             });
-            return {updatedItems: files, success: false};
+            return;
           }
-          return {updatedItems: [...items, itemToAdd].sort((a, b) => a.name.localeCompare(b.name)), success: true};
+          targetFolder.children = [...(targetFolder.children || []), itemToMove];
+          targetFolder.children.sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+          return; // Invalid target
         }
-        let success = true;
-        const mappedItems = items.map(item => {
-          if (item.id === parentId && item.type === 'folder') {
-            if (item.children?.some(child => child.name === itemToAdd.name && child.id !== itemToAdd.id)) {
-              toast({
-                title: 'Duplicate Name',
-                description: `An item named "${itemToAdd.name}" already exists in "${item.name}". Move cancelled.`,
-                variant: 'destructive',
-              });
-              success = false;
-              return item;
-            }
-            return {...item, children: [...(item.children || []), itemToAdd].sort((a, b) => a.name.localeCompare(b.name))};
-          }
-          if (item.children) {
-            const childResult = addItem(item.children, parentId, itemToAdd);
-            if (!childResult.success) success = false;
-            return {...item, children: childResult.updatedItems};
-          }
-          return item;
-        });
-        return {updatedItems: mappedItems, success};
-      };
-
-      const {updatedItems: finalFiles, success: moveSuccess} = addItem(filesAfterRemoval, targetFolderId, itemToMove);
-
-      if (moveSuccess) {
-        setFiles(finalFiles);
-        toast({title: 'Moved', description: `Item "${itemToMove.name}" moved successfully.`});
       }
+
+      setFiles(filesAfterRemoval);
+      toast({title: 'Moved', description: `Item "${itemToMove.name}" moved successfully.`});
     },
     [files, toast]
   );
@@ -270,7 +234,9 @@ export function useFileTree() {
     const updateRecursively = (items: FileItem[]): FileItem[] => {
       return items.map(item => {
         if (item.id === fileId) {
-          return {...item, content: newContent};
+          if (item.type === 'file') {
+            return {...item, content: newContent};
+          }
         }
         if (item.children) {
           return {...item, children: updateRecursively(item.children)};
