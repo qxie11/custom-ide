@@ -8,11 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
+export type ThemeType = 'dark-plus' | 'light-plus' | 'monokai';
+
 export interface EditorSettings {
   fontSize: number;
   autoSave: boolean;
   wordWrap: 'on' | 'off';
   formatOnSave: boolean;
+  theme: ThemeType;
 }
 
 interface SettingsPanelProps {
@@ -29,6 +32,10 @@ export function SettingsPanel({ settings, onApply }: SettingsPanelProps) {
 
   const handleApplyClick = () => {
     onApply(localSettings);
+  };
+  
+  const handleThemeChange = (value: ThemeType) => {
+    setLocalSettings(s => ({ ...s, theme: value }));
   };
 
   return (
@@ -69,7 +76,7 @@ export function SettingsPanel({ settings, onApply }: SettingsPanelProps) {
         <h3 className="text-md font-medium text-foreground/90">Theme</h3>
         <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent/5">
           <Label htmlFor="color-theme" className="text-foreground/80">Color Theme</Label>
-          <Select defaultValue="dark-plus">
+          <Select value={localSettings.theme} onValueChange={handleThemeChange}>
             <SelectTrigger className="w-40 h-8 text-xs bg-input">
               <SelectValue placeholder="Select theme" />
             </SelectTrigger>

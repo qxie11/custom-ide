@@ -13,7 +13,7 @@ import { CodeEditor } from '@/components/code-editor/CodeEditor';
 import { StatusBar } from '@/components/status-bar/StatusBar';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useToast } from '@/hooks/use-toast';
-import type { EditorSettings } from '@/components/settings-panel/SettingsPanel';
+import type { EditorSettings, ThemeType } from '@/components/settings-panel/SettingsPanel';
 
 const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 9);
 
@@ -34,6 +34,7 @@ export default function AppLayout() {
     autoSave: true,
     wordWrap: 'off',
     formatOnSave: true,
+    theme: 'dark-plus',
   });
 
   const findFileByIdRecursive = useCallback((filesToSearch: FileItem[], id: string): FileItem | null => {
@@ -370,6 +371,16 @@ export default function AppLayout() {
     setEditorSettings(newSettings);
     toast({ title: "Settings Applied", description: "Your editor settings have been updated." });
   }, [toast]);
+  
+  useEffect(() => {
+    document.documentElement.classList.remove('theme-dark-plus', 'theme-light-plus', 'theme-monokai', 'dark', 'light');
+    document.documentElement.classList.add(`theme-${editorSettings.theme}`);
+    if (editorSettings.theme.includes('dark') || editorSettings.theme.includes('monokai')) {
+      document.documentElement.classList.add('dark');
+    } else {
+       document.documentElement.classList.add('light');
+    }
+  }, [editorSettings.theme]);
 
   useEffect(() => {
      const findFirstFile = (items: FileItem[]): FileItem | null => {
