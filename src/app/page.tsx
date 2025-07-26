@@ -1,4 +1,4 @@
-import AppLayout from '@/components/layout/AppLayout';
+import {AppLayout} from '@/widgets/app-layout';
 
 export default function HomePage() {
   return <AppLayout />;

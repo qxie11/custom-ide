@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
-import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
+import type {Metadata} from 'next';
+import {GeistMono} from 'geist/font/mono';
+import {GeistSans} from 'geist/font/sans';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster";
+import {Toaster} from '@/shared/ui/toaster';
+import {Providers} from '@/app/providers';
 
 const geistSans = GeistSans;
 const geistMono = GeistMono;
@@ -20,7 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>
-        {children}
+        <Providers>{children}</Providers>
         <Toaster />
       </body>
     </html>
